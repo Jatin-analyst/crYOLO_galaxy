@@ -1,0 +1,116 @@
+<tool id="cryolo_config" name="crYOLO Config" version="@TOOL_VERSION@+galaxy@VERSION_SUFFIX@" profile="21.05">
+    <description>Generate crYOLO configuration file</description>
+    <macros>
+        <import>macros.xml</import>
+    </macros>
+    <expand macro="requirements"/>
+    <command detect_errors="exit_code"><![CDATA[
+        python -c "
+import cryolo.config_tools as ct
+#if str($filter_section.filter_type) == 'LOWPASS':
+filter_list = [$filter_section.low_pass_cutoff, 'filtered_tmp/']
+#elif str($filter_section.filter_type) == 'JANNI':
+filter_list = ['$filter_section.janni_model', $filter_section.janni_overlap, $filter_section.janni_batches, 'filtered_tmp/']
+#else:
+filter_list = None
+#end if
+
+ct.generate_config_file(
+    config_out_path='$config_out',
+    architecture='$architecture',
+    input_size=$input_size,
+    anchors=[$boxsize, $boxsize],
+    max_box_per_image=700,
+    num_patches=$num_patches,
+    overlap_patches=$overlap_patches,
+    filter=filter_list,
+    train_image_folder='',
+    train_annot_folder='',
+    train_times=$train_opts.train_times,
+    pretrained_weights='',
+    batch_size=$train_opts.batch_size,
+    learning_rate=$train_opts.learning_rate,
+    nb_epoch=$train_opts.nb_epoch,
+    object_scale=$train_opts.object_scale,
+    no_object_scale=$train_opts.no_object_scale,
+    coord_scale=$train_opts.coord_scale,
+    class_scale=$train_opts.class_scale,
+    log_path='logs/',
+    saved_weights_name='cryolo_model.h5',
+    debug=True,
+    valid_image_folder='',
+    valid_annot_folder='',
+    valid_times=1,
+    normalization='$normalization'
+)
+"
+    ]]></command>
+    <inputs>
+        <param name="architecture" type="select" label="Backend Network Architecture">
+            <option value="PhosaurusNet" selected="true">PhosaurusNet (Recommended)</option>
+            <option value="YOLO">YOLO</option>
+            <option value="crYOLO">crYOLO</option>
+        </param>
+        <param name="boxsize" type="integer" value="200" min="1" label="Box Size (Pixels)" help="Specify target box size / particle diameter." />
+        <param name="input_size" type="integer" value="1024" min="32" label="Input Image Size" help="Dimension to downsize shorter micrograph side to. Must be a multiple of 32." />
+        <param name="normalization" type="select" label="Normalization Mode">
+            <option value="STANDARD" selected="true">Standard (mean/std subtraction)</option>
+            <option value="GMM">GMM (Gaussian Mixture Model)</option>
+        </param>
+        <param name="num_patches" type="integer" value="1" min="1" label="Number of Patches" help="Tessellation patch mode. Recommended value is 1." />
+        <param name="overlap_patches" type="integer" value="200" min="0" label="Overlap Between Patches" help="Only needed if using patch mode." />
+
+        <conditional name="filter_section">
+            <param name="filter_type" type="select" label="Noise Filtering Method">
+                <option value="LOWPASS" selected="true">Lowpass filter</option>
+                <option value="JANNI">JANNI (neural network denoising)</option>
+                <option value="NONE">No filtering</option>
+            </param>
+            <when value="LOWPASS">
+                <param name="low_pass_cutoff" type="float" value="0.1" min="0.0" max="0.5" label="Lowpass Filter Cutoff Frequency" />
+            </when>
+            <when value="JANNI">
+                <param name="janni_model" type="data" format="h5" label="JANNI Model Path" />
+                <param name="janni_overlap" type="integer" value="24" min="0" label="JANNI Patch Overlap" />
+                <param name="janni_batches" type="integer" value="3" min="1" label="JANNI Prediction Batches" />
+            </when>
+            <when value="NONE">
+            </when>
+        </conditional>
+
+        <section name="train_opts" title="Advanced Training Options" expanded="false">
+            <param name="train_times" type="integer" value="10" min="1" label="Train Times" help="How often each image is presented to the network per epoch." />
+            <param name="batch_size" type="integer" value="4" min="1" label="Batch Size" />
+            <param name="learning_rate" type="float" value="0.0001" label="Learning Rate" />
+            <param name="nb_epoch" type="integer" value="200" min="1" label="Maximum Epochs" />
+            <param name="object_scale" type="float" value="5.0" label="Object Scale Penalty" />
+            <param name="no_object_scale" type="float" value="1.0" label="No-Object Scale Penalty" />
+            <param name="coord_scale" type="float" value="1.0" label="Coord Scale Penalty" />
+            <param name="class_scale" type="float" value="1.0" label="Class Scale Penalty" />
+        </section>
+    </inputs>
+    <outputs>
+        <data name="config_out" format="json" label="crYOLO Config on Box Size $boxsize" />
+    </outputs>
+    <tests>
+        <test>
+            <param name="architecture" value="PhosaurusNet" />
+            <param name="boxsize" value="200" />
+            <param name="input_size" value="1024" />
+            <param name="normalization" value="STANDARD" />
+            <param name="num_patches" value="1" />
+            <conditional name="filter_section">
+                <param name="filter_type" value="LOWPASS" />
+                <param name="low_pass_cutoff" value="0.1" />
+            </conditional>
+            <output name="config_out" file="config_cryolo.json" compare="sim_size" />
+        </test>
+    </tests>
+    <help><![CDATA[
+**What it does**
+
+This tool generates a JSON configuration file for crYOLO, detailing network architecture backends, sizing parameters, filters, and scales.
+This configuration file is required for both the Training and Prediction processes.
+    ]]></help>
+    <expand macro="citations"/>
+</tool>

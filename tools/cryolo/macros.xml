@@ -1,0 +1,21 @@
+<macros>
+    <token name="@TOOL_VERSION@">1.9.9</token>
+    <token name="@VERSION_SUFFIX@">0</token>
+    <xml name="requirements">
+        <requirements>
+            <requirement type="package" version="@TOOL_VERSION@">cryolo</requirement>
+            <yield/>
+        </requirements>
+    </xml>
+    <xml name="citations">
+        <citations>
+            <citation type="doi">10.1038/s42003-019-0312-7</citation>
+        </citations>
+    </xml>
+    <xml name="gpu_parameters">
+        <section name="gpu_opts" title="GPU Acceleration Options" expanded="false">
+            <param name="gpu" type="text" value="0" label="GPU Device IDs" help="Specify which GPU(s) should be used. Multiple GPUs are separated by a space. E.g., '0' or '0 1'. Enter '-1' to use CPU only." />
+            <param name="gpu_fraction" type="float" min="0.0" max="1.0" value="1.0" label="GPU Memory Fraction" help="Specify the fraction of memory per GPU used by crYOLO. Only values between 0.0 and 1.0 are allowed." />
+        </section>
+    </xml>
+</macros>

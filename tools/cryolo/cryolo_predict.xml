@@ -1,0 +1,158 @@
+<tool id="cryolo_predict" name="crYOLO Predict" version="@TOOL_VERSION@+galaxy@VERSION_SUFFIX@" profile="21.05">
+    <description>Pick particles using a trained crYOLO model</description>
+    <macros>
+        <import>macros.xml</import>
+    </macros>
+    <expand macro="requirements"/>
+    <command detect_errors="exit_code"><![CDATA[
+        #import re
+        mkdir -p input_micrographs &&
+        #for $m in $micrographs:
+            #set $clean_name = re.sub('[^\w\-\.]', '_', str($m.element_identifier))
+            ln -s '$m' 'input_micrographs/$clean_name' &&
+        #end for
+
+        cryolo_predict.py
+            --conf '$conf'
+            --weights '$weights'
+            --input 'input_micrographs'
+            --output 'output_dir'
+            --threshold $threshold
+            --distance $distance
+            #if $size_opts.minsize:
+                --minsize $size_opts.minsize
+            #end if
+            #if $size_opts.maxsize:
+                --maxsize $size_opts.maxsize
+            #end if
+            --prediction_batch_size $pbs
+            #if str($gpu_opts.gpu) != "":
+                --gpu '$gpu_opts.gpu'
+                --gpu_fraction $gpu_opts.gpu_fraction
+            #else:
+                --gpu -1
+            #end if
+            #if $num_cpu != -1:
+                --num_cpu $num_cpu
+            #end if
+            $skip
+            $otf
+            $write_empty
+
+            ## Filament options
+            #if str($picking_mode.mode) == 'filament':
+                --filament
+                --box_distance $picking_mode.box_distance
+                #if $picking_mode.minimum_number_boxes:
+                    --minimum_number_boxes $picking_mode.minimum_number_boxes
+                #end if
+                --straightness_method $picking_mode.straightness_method
+                --straightness_threshold $picking_mode.straightness_threshold
+                --search_range_factor $picking_mode.search_range_factor
+                --angle_delta $picking_mode.angle_delta
+                --directional_method $picking_mode.directional_method
+                #if str($picking_mode.directional_method) == 'CONVOLUTION' and $picking_mode.filament_width:
+                    --filament_width $picking_mode.filament_width
+                #end if
+                --mask_width $picking_mode.mask_width
+                #if $picking_mode.nomerging:
+                    --nomerging
+                #end if
+            #end if
+
+            ## Tomography options
+            #if str($picking_mode.mode) == 'tomography':
+                --tomogram
+                --tracing_search_range $picking_mode.tracing_search_range
+                --tracing_memory $picking_mode.tracing_memory
+                --minimum_number_boxes_3d $picking_mode.minimum_number_boxes_3d
+                --tracing_min_length $picking_mode.tracing_min_length
+                --tracing_window_size $picking_mode.tracing_window_size
+                --tracing_min_edge_weight $picking_mode.tracing_min_edge_weight
+                --tracing_merge_thresh $picking_mode.tracing_merge_thresh
+            #end if
+    ]]></command>
+    <inputs>
+        <param name="conf" type="data" format="json" label="crYOLO Configuration File" />
+        <param name="weights" type="data" format="h5" label="Trained Model Weights (.h5)" />
+        <param name="micrographs" type="data" format="mrc,tiff,png" multiple="true" label="Micrograph Images" help="Select one or more micrographs / dataset collections." />
+        <param name="threshold" type="float" value="0.3" min="0.0" max="1.0" label="Confidence Threshold" help="Pick confidence cutoff. The higher, the more conservative." />
+        <param name="distance" type="integer" value="0" min="0" label="Minimum Distance Filter (Pixels)" help="Detected particles closer than this distance will be filtered out." />
+        <param name="pbs" type="integer" value="3" min="1" label="Prediction Batch Size" help="Number of images processed in parallel. Reduce this if running out of GPU memory." />
+        <param name="num_cpu" type="integer" value="-1" label="Number of CPUs to use" help="Set to -1 to use all available CPU cores." />
+
+        <section name="size_opts" title="Particle Size Constraints" expanded="false">
+            <param name="minsize" type="integer" value="" optional="true" label="Minimum Estimated Diameter (Pixels)" help="Filter out particles smaller than this size." />
+            <param name="maxsize" type="integer" value="" optional="true" label="Maximum Estimated Diameter (Pixels)" help="Filter out particles larger than this size." />
+        </section>
+
+        <param name="skip" type="boolean" truevalue="--skip" falsevalue="" checked="false" label="Skip Picked" help="Skip picking for micrographs that already have boxes." />
+        <param name="otf" type="boolean" truevalue="--otf" falsevalue="" checked="false" label="On-the-fly Filtering" help="Perform filtering in memory (micrographs won't be written to disk)." />
+        <param name="write_empty" type="boolean" truevalue="--write_empty" falsevalue="" checked="false" label="Write Empty Coordinate Files" help="Create coordinate files even when no particles are detected." />
+
+        <conditional name="picking_mode">
+            <param name="mode" type="select" label="Picking Mode Selection">
+                <option value="spa" selected="true">Single Particle Analysis (SPA)</option>
+                <option value="filament">Filament Tracing</option>
+                <option value="tomography">3D Tomography Picking</option>
+            </param>
+            <when value="spa">
+            </when>
+            <when value="filament">
+                <param name="box_distance" type="integer" value="40" min="1" label="Box Distance (Pixels)" help="Spacing between boxes along a filament." />
+                <param name="minimum_number_boxes" type="integer" value="" optional="true" label="Minimum Boxes per Filament" help="Discard filaments with fewer boxes than this limit." />
+                <param name="straightness_method" type="select" label="Straightness Method">
+                    <option value="LINE_STRAIGHTNESS" selected="true">Line Straightness</option>
+                    <option value="RMSD">RMSD (Root Mean Square Deviation)</option>
+                    <option value="NONE">None</option>
+                </param>
+                <param name="straightness_threshold" type="float" value="0.95" label="Straightness Threshold" />
+                <param name="search_range_factor" type="float" value="1.41" label="Search Range Factor" help="Search range is box size times this factor." />
+                <param name="angle_delta" type="float" value="10.0" label="Angle Delta (Degrees)" help="Allowed angular deviation for straight filaments." />
+                <param name="directional_method" type="select" label="Directional Method">
+                    <option value="PREDICTED" selected="true">Predicted (Model Orientation)</option>
+                    <option value="CONVOLUTION">Convolution (Estimates angles via mask)</option>
+                </param>
+                <param name="filament_width" type="integer" value="" optional="true" label="Filament Width (Pixels)" help="Required only for Convolution method." />
+                <param name="mask_width" type="integer" value="100" label="Mask Width" help="Required only for Convolution method." />
+                <param name="nomerging" type="boolean" truevalue="--nomerging" falsevalue="" checked="false" label="Disable Filament Merging" />
+            </when>
+            <when value="tomography">
+                <param name="tracing_search_range" type="integer" value="-1" label="Tracing Search Range (Pixels)" help="Defaults to -1 (25% of box size)." />
+                <param name="tracing_memory" type="integer" value="0" min="0" label="Tracing Memory" help="Max slices a particle can vanish and reappear." />
+                <param name="minimum_number_boxes_3d" type="integer" value="2" min="1" label="Minimum Boxes per Filament (3D)" />
+                <param name="tracing_min_length" type="integer" value="5" min="1" label="Minimum Trace Length (Particles)" help="Minimum number of slice picks to count as a 3D particle." />
+                <param name="tracing_window_size" type="integer" value="-1" label="Tracing Window Size" help="Window width when averaging filament positions. Default (-1) uses box size." />
+                <param name="tracing_min_edge_weight" type="float" value="0.4" min="0.0" max="1.0" label="Tracing Min Edge Weight" help="Minimum overlap fraction between slices." />
+                <param name="tracing_merge_thresh" type="float" value="0.8" min="0.0" max="1.0" label="Tracing Merge Threshold" help="Threshold above which overlapping filaments are merged." />
+            </when>
+        </conditional>
+
+        <expand macro="gpu_parameters" />
+    </inputs>
+    <outputs>
+        <collection name="eman_outputs" type="list" label="crYOLO EMAN Box Files (on ${on_string})">
+            <discover_datasets pattern="(?P&lt;designation&gt;.+)\.box" directory="output_dir/EMAN" format="txt" />
+        </collection>
+        <collection name="star_outputs" type="list" label="crYOLO STAR Coordinate Files (on ${on_string})">
+            <discover_datasets pattern="(?P&lt;designation&gt;.+)\.star" directory="output_dir/STAR" format="tabular" />
+        </collection>
+        <collection name="cbox_outputs" type="list" label="crYOLO CBOX Coordinate Files (on ${on_string})">
+            <discover_datasets pattern="(?P&lt;designation&gt;.+)\.cbox" directory="output_dir/CBOX" format="tabular" />
+        </collection>
+    </outputs>
+    <tests>
+        <test expect_failure="true">
+            <!-- Checking lint and schema validation without real data -->
+            <param name="conf" value="config_cryolo.json" />
+            <param name="weights" value="cryolo_model.h5" />
+            <param name="micrographs" value="config_cryolo.json" />
+        </test>
+    </tests>
+    <help><![CDATA[
+**What it does**
+
+This tool executes the crYOLO prediction/picking pipeline. It supports SPA particle picking, Helical Filament Tracing, and 3D Tomography linking, outputting coordinate files in EMAN, STAR, and CBOX formats.
+    ]]></help>
+    <expand macro="citations"/>
+</tool>
